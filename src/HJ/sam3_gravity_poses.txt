@@ -1,0 +1,16 @@
+=== SAM3 Final Poses ===
+
+--- Landmarks ---
+Frame: landmark_0 | X: 0.5065 | Y: -0.1571 | Z: 0.2687 | oX: -0.0095 | oY: -0.0025 | oZ: 0.9999 | oW: -0.0050 | Roll: -0.2811 | Pitch: 1.0900 | Yaw: -179.4296
+Frame: landmark_1 | X: 0.5037 | Y: 0.0131 | Z: 0.4075 | oX: 0.0037 | oY: 0.0030 | oZ: 1.0000 | oW: 0.0028 | Roll: 0.3450 | Pitch: -0.4230 | Yaw: 179.6779
+Frame: landmark_2 | X: 0.5088 | Y: 0.0118 | Z: 0.2518 | oX: -0.0172 | oY: -0.0008 | oZ: 0.9999 | oW: 0.0012 | Roll: -0.0941 | Pitch: 1.9711 | Yaw: 179.8609
+
+--- SAM3 Boxes ---
+Frame: sam3_box_1 | X: 0.4933 | Y: 0.0118 | Z: 0.2604 | oX: 0.5162 | oY: -0.5119 | oZ: -0.4835 | oW: 0.4876 | Roll: 93.2676 | Pitch: 0.0000 | Yaw: -89.5231
+Frame: sam3_box_2 | X: 0.4927 | Y: -0.1511 | Z: 0.2748 | oX: 0.5078 | oY: -0.4968 | oZ: -0.4921 | oW: 0.5031 | Roll: 90.5398 | Pitch: 0.0000 | Yaw: -88.7404
+Frame: sam3_box_3 | X: 0.4910 | Y: 0.0126 | Z: 0.4085 | oX: 0.4919 | oY: -0.4930 | oZ: -0.5080 | oW: 0.5069 | Roll: 88.2834 | Pitch: -0.0000 | Yaw: -90.1272
+
+--- SAM3 Rotated Boxes ---
+Frame: sam3_box_1_rotated | X: 0.4933 | Y: 0.0118 | Z: 0.2604 | oX: -0.0285 | oY: -0.0001 | oZ: 0.9996 | oW: -0.0042 | Roll: 0.0000 | Pitch: 3.2676 | Yaw: -179.5231
+Frame: sam3_box_2_rotated | X: 0.4927 | Y: -0.1511 | Z: 0.2748 | oX: -0.0047 | oY: -0.0001 | oZ: 0.9999 | oW: -0.0110 | Roll: 0.0000 | Pitch: 0.5398 | Yaw: -178.7404
+Frame: sam3_box_3_rotated | X: 0.4910 | Y: 0.0126 | Z: 0.4085 | oX: 0.0150 | oY: -0.0000 | oZ: 0.9999 | oW: 0.0011 | Roll: 0.0000 | Pitch: -1.7166 | Yaw: 179.8728
