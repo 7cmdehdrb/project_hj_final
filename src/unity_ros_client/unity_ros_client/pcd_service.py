@@ -118,10 +118,10 @@ def main(args=None):
     rclpy.init(args=args)
     # 실제 파일 경로로 수정
     path_list = [
-        "/home/jinju/HJ/src/data/240910_noiseX.pcd",
-        "/home/jinju/HJ/src/data/241108.pcd",
-        "/home/jinju/HJ/src/data/global_241127.pcd",
-        "/home/jinju/HJ/src/data/segmented_240910_noiseX.pcd",
+        "/home/min/7cmdehdrb/project_hj_final/src/unity_ros_client/resource/data/240910_noiseX.pcd",
+        "/home/min/7cmdehdrb/project_hj_final/src/unity_ros_client/resource/data/241108.pcd",
+        "/home/min/7cmdehdrb/project_hj_final/src/unity_ros_client/resource/data/global_241127.pcd",
+        "/home/min/7cmdehdrb/project_hj_final/src/unity_ros_client/resource/data/segmented_240910_noiseX.pcd",
     ]
     pcd_file_path = path_list[2]
     node = PcdServicePublisher(pcd_file_path)
