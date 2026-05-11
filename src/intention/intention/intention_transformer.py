@@ -32,12 +32,30 @@ from rclpy.node import Node
 from rclpy.time import Time
 
 from builtin_interfaces.msg import Time as TimeMsg
-from geometry_msgs.msg import Pose, TransformStamped, Vector3
+from geometry_msgs.msg import (
+    Point,
+    Pose,
+    Quaternion,
+    Transform,
+    TransformStamped,
+    Vector3,
+)
 from sensor_msgs.msg import JointState, Joy
-from std_msgs.msg import ColorRGBA
+from std_msgs.msg import ColorRGBA, Header
+from rclpy.qos import QoSProfile, qos_profile_system_default
 from tf2_ros import Buffer, TransformBroadcaster, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
-from rotutils import euler_from_quaternion, euler_from_rotation_matrix,  quaternion_from_euler, quaternion_from_rotation_matrix, rot
+
+# Replace this import path with the actual package/module path in your ROS2 workspace.
+# The uploaded helper library provides these functions.
+from rotutils import (
+    compose_transform,
+    decompose_transform,
+    euler_from_quaternion,
+    invert_transform,
+    quaternion_from_rotation_matrix,
+    rotation_matrix_from_euler,
+)
 
 # =============================================================================
 # Hard-coded configuration section
@@ -74,13 +92,24 @@ MANIPULATOR_LENGTH_R = 1.125
 GAIN_DISTANCE_A = 1.0
 MAX_INTERSECTION_T = 30.0
 
-# Plane parameters from the previous implementation.
-# The same coefficients are used in each intention instance's target frame.
+# Plane generation mode.
+# False: use the predefined plane below.
+# True : estimate the plane from RealBox MarkerArray centers by least-squares/PCA.
+USE_REGRESSED_PLANE_FROM_REAL_BOXES = True
+
+# Predefined plane parameters from the previous implementation.
+# Used either as the fixed plane, or as the initial/fallback plane before enough RealBox data arrives.
 PLANE_NORMAL = np.array([0.99887537, 0.0465492, 0.00900962], dtype=float)
 PLANE_D = -0.8969238154115642
 
+# At least 3 non-collinear points are required to fit a plane.
+MIN_PLANE_REGRESSION_BOXES = 3
+
 # TF lookup timeout.
 TF_LOOKUP_TIMEOUT_SEC = 0.05
+
+# Subscription QoS.
+SUBSCRIPTION_QOS: QoSProfile = qos_profile_system_default
 
 # Best-box visualization settings.
 BEST_BOX_REAL_MARKER_ID = 0
@@ -103,93 +132,36 @@ def now_msg(node: Node) -> TimeMsg:
     return node.get_clock().now().to_msg()
 
 
-def normalize_quaternion_xyzw(q: np.ndarray) -> np.ndarray:
-    q = np.asarray(q, dtype=float)
-    norm = np.linalg.norm(q)
-    if norm < 1e-12:
-        return np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
-    return q / norm
-
-
-def quaternion_xyzw_to_matrix(q: np.ndarray) -> np.ndarray:
-    """Convert quaternion [x, y, z, w] to a 3x3 rotation matrix."""
-    x, y, z, w = normalize_quaternion_xyzw(q)
-
-    xx, yy, zz = x * x, y * y, z * z
-    xy, xz, yz = x * y, x * z, y * z
-    wx, wy, wz = w * x, w * y, w * z
-
-    return np.array(
-        [
-            [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)],
-            [2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
-            [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)],
-        ],
+def pose_to_matrix(pose: Pose, ignore_orientation: bool = False) -> np.ndarray:
+    translation = np.array(
+        [pose.position.x, pose.position.y, pose.position.z],
         dtype=float,
     )
 
-
-def matrix_to_quaternion_xyzw(rot: np.ndarray) -> np.ndarray:
-    """Convert a 3x3 rotation matrix to quaternion [x, y, z, w]."""
-    m = np.asarray(rot, dtype=float)
-    trace = np.trace(m)
-
-    if trace > 0.0:
-        s = math.sqrt(trace + 1.0) * 2.0
-        w = 0.25 * s
-        x = (m[2, 1] - m[1, 2]) / s
-        y = (m[0, 2] - m[2, 0]) / s
-        z = (m[1, 0] - m[0, 1]) / s
-    elif (m[0, 0] > m[1, 1]) and (m[0, 0] > m[2, 2]):
-        s = math.sqrt(max(1.0 + m[0, 0] - m[1, 1] - m[2, 2], 0.0)) * 2.0
-        w = (m[2, 1] - m[1, 2]) / s
-        x = 0.25 * s
-        y = (m[0, 1] + m[1, 0]) / s
-        z = (m[0, 2] + m[2, 0]) / s
-    elif m[1, 1] > m[2, 2]:
-        s = math.sqrt(max(1.0 + m[1, 1] - m[0, 0] - m[2, 2], 0.0)) * 2.0
-        w = (m[0, 2] - m[2, 0]) / s
-        x = (m[0, 1] + m[1, 0]) / s
-        y = 0.25 * s
-        z = (m[1, 2] + m[2, 1]) / s
+    if ignore_orientation:
+        rotation = np.eye(3, dtype=float)
     else:
-        s = math.sqrt(max(1.0 + m[2, 2] - m[0, 0] - m[1, 1], 0.0)) * 2.0
-        w = (m[1, 0] - m[0, 1]) / s
-        x = (m[0, 2] + m[2, 0]) / s
-        y = (m[1, 2] + m[2, 1]) / s
-        z = 0.25 * s
-
-    return normalize_quaternion_xyzw(np.array([x, y, z, w], dtype=float))
-
-
-def pose_to_matrix(pose: Pose, ignore_orientation: bool = False) -> np.ndarray:
-    mat = np.eye(4, dtype=float)
-    mat[:3, 3] = np.array(
-        [pose.position.x, pose.position.y, pose.position.z], dtype=float
-    )
-
-    if not ignore_orientation:
-        q = np.array(
-            [
-                pose.orientation.x,
-                pose.orientation.y,
-                pose.orientation.z,
-                pose.orientation.w,
-            ],
-            dtype=float,
+        q = pose.orientation
+        roll, pitch, yaw = euler_from_quaternion(
+            q.x,
+            q.y,
+            q.z,
+            q.w,
         )
-        mat[:3, :3] = quaternion_xyzw_to_matrix(q)
+        rotation = rotation_matrix_from_euler(roll, pitch, yaw)
 
-    return mat
+    return compose_transform(translation, rotation)
 
 
 def transform_to_matrix(transform: TransformStamped) -> np.ndarray:
-    mat = np.eye(4, dtype=float)
     t = transform.transform.translation
     q = transform.transform.rotation
-    mat[:3, 3] = np.array([t.x, t.y, t.z], dtype=float)
-    mat[:3, :3] = quaternion_xyzw_to_matrix(np.array([q.x, q.y, q.z, q.w]))
-    return mat
+    roll, pitch, yaw = euler_from_quaternion(q.x, q.y, q.z, q.w)
+
+    return compose_transform(
+        translation=np.array([t.x, t.y, t.z], dtype=float),
+        rotation=rotation_matrix_from_euler(roll, pitch, yaw),
+    )
 
 
 def matrix_to_transform_stamped(
@@ -198,21 +170,26 @@ def matrix_to_transform_stamped(
     child_frame: str,
     stamp: TimeMsg,
 ) -> TransformStamped:
-    mat = np.asarray(mat, dtype=float)
-    q = matrix_to_quaternion_xyzw(mat[:3, :3])
+    translation, rotation = decompose_transform(np.asarray(mat, dtype=float))
+    qx, qy, qz, qw = quaternion_from_rotation_matrix(rotation)
 
-    msg = TransformStamped()
-    msg.header.stamp = stamp
-    msg.header.frame_id = parent_frame
-    msg.child_frame_id = child_frame
-    msg.transform.translation.x = float(mat[0, 3])
-    msg.transform.translation.y = float(mat[1, 3])
-    msg.transform.translation.z = float(mat[2, 3])
-    msg.transform.rotation.x = float(q[0])
-    msg.transform.rotation.y = float(q[1])
-    msg.transform.rotation.z = float(q[2])
-    msg.transform.rotation.w = float(q[3])
-    return msg
+    return TransformStamped(
+        header=Header(stamp=stamp, frame_id=parent_frame),
+        child_frame_id=child_frame,
+        transform=Transform(
+            translation=Vector3(
+                x=float(translation[0]),
+                y=float(translation[1]),
+                z=float(translation[2]),
+            ),
+            rotation=Quaternion(
+                x=float(qx),
+                y=float(qy),
+                z=float(qz),
+                w=float(qw),
+            ),
+        ),
+    )
 
 
 def copy_marker_for_best_box(
@@ -268,15 +245,69 @@ class ToolState:
 
 class Plane:
     def __init__(self, n: np.ndarray, d: float):
+        self.set(n, d)
+
+    def set(self, n: np.ndarray, d: float) -> None:
         if not isinstance(n, np.ndarray):
             raise ValueError("n must be a numpy array")
         if n.shape != (3,):
             raise ValueError("n must have shape (3,)")
-        if np.linalg.norm(n) < 1e-12:
+
+        norm = np.linalg.norm(n)
+        if norm < 1e-12:
             raise ValueError("plane normal vector must be non-zero")
 
-        self.n = n.astype(float)
-        self.d = float(d)
+        self.n = n.astype(float) / norm
+        self.d = float(d) / norm
+
+    def fit_from_boxes(self, boxes: Dict[int, BoxRecord]) -> bool:
+        if len(boxes) < MIN_PLANE_REGRESSION_BOXES:
+            return False
+
+        points = np.array(
+            [
+                [box.pose.position.x, box.pose.position.y, box.pose.position.z]
+                for box in boxes.values()
+            ],
+            dtype=float,
+        )
+
+        if points.shape[0] < MIN_PLANE_REGRESSION_BOXES:
+            return False
+
+        centroid = np.mean(points, axis=0)
+        centered = points - centroid
+
+        try:
+            _, singular_values, vh = np.linalg.svd(centered, full_matrices=False)
+        except np.linalg.LinAlgError:
+            return False
+
+        if vh.shape[0] < 3:
+            return False
+
+        normal = vh[-1, :]
+        if np.linalg.norm(normal) < 1e-12:
+            return False
+
+        # Use box orientations only to choose the normal direction consistently.
+        # The local +X axis of each box pose is treated as the box-plane normal candidate.
+        orientation_normals = []
+        for box in boxes.values():
+            q = box.pose.orientation
+            roll, pitch, yaw = euler_from_quaternion(q.x, q.y, q.z, q.w)
+            rotation = rotation_matrix_from_euler(roll, pitch, yaw)
+            orientation_normals.append(rotation[:, 0])
+
+        if orientation_normals:
+            mean_orientation_normal = np.mean(np.array(orientation_normals), axis=0)
+            if np.linalg.norm(mean_orientation_normal) > 1e-12:
+                if np.dot(normal, mean_orientation_normal) < 0.0:
+                    normal = -normal
+
+        d = -float(np.dot(normal, centroid))
+        self.set(normal, d)
+        return True
 
     def distance(self, p: np.ndarray) -> float:
         return float(abs(np.dot(self.n, p) + self.d) / np.linalg.norm(self.n))
@@ -326,7 +357,7 @@ class BoxManager:
             MarkerArray,
             topic,
             self.callback,
-            10,
+            qos_profile=SUBSCRIPTION_QOS,
         )
 
     def callback(self, msg: MarkerArray) -> None:
@@ -367,7 +398,7 @@ class Robot:
             JointState,
             JOINT_STATE_TOPIC,
             self.joint_state_callback,
-            10,
+            qos_profile=SUBSCRIPTION_QOS,
         )
 
     def joint_state_callback(self, msg: JointState) -> None:
@@ -720,6 +751,8 @@ class IntentionTransformNode(Node):
         self.robot = Robot(self, self.tf_buffer)
         plane = Plane(PLANE_NORMAL, PLANE_D)
 
+        self.plane = plane
+
         self.real_intention = Intention(
             node=self,
             name="real",
@@ -749,7 +782,7 @@ class IntentionTransformNode(Node):
             Joy,
             JOY_TOPIC,
             self.joy_callback,
-            10,
+            qos_profile=SUBSCRIPTION_QOS,
         )
 
         self.last_virtual_base_tf: Optional[TransformStamped] = None
@@ -783,9 +816,20 @@ class IntentionTransformNode(Node):
             self.virtual_intention.reset()
 
     def intention_timer_callback(self) -> None:
+        self.update_plane_if_enabled()
         self.real_intention.update()
         self.virtual_intention.update()
         self.publish_selected_best_boxes()
+
+    def update_plane_if_enabled(self) -> None:
+        if not USE_REGRESSED_PLANE_FROM_REAL_BOXES:
+            return
+
+        updated = self.plane.fit_from_boxes(self.real_intention.box_manager.get_boxes())
+        if updated:
+            self.get_logger().debug(
+                f"Regressed plane updated: n={self.plane.n.tolist()}, d={self.plane.d:.6f}"
+            )
 
     def publish_selected_best_boxes(self) -> None:
         real_best = self.real_intention.get_best_box()
@@ -844,7 +888,7 @@ class IntentionTransformNode(Node):
         else:
             T_map_virtual_box = pose_to_matrix(virtual_pose, ignore_orientation=False)
             T_base_real_box = pose_to_matrix(real_pose, ignore_orientation=False)
-            mat = T_map_virtual_box @ np.linalg.inv(T_base_real_box)
+            mat = T_map_virtual_box @ invert_transform(T_base_real_box)
 
         return matrix_to_transform_stamped(
             mat,

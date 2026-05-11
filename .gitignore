@@ -363,3 +363,7 @@ AMENT_IGNORE
 
 *.pcd
 *.pt
+*.pth
+*.apk
+*.unity
+*.unitypackage
