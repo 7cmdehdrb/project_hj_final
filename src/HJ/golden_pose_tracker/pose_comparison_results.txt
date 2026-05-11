@@ -1,0 +1,31 @@
+=== Pose Comparison Results ===
+Saved at: 2026-05-11 15:38:47
+
+--- AprilTag Poses ---
+Tag 0:
+  [Original] Position (x,y,z): 0.5116, 0.0174, 0.4073
+  [Original] Orientation (Roll, Pitch, Yaw) [deg]: 1.19, 0.04, 177.92
+  [Rotated Z90X90] Orientation (Roll, Pitch, Yaw) [deg]: 90.04, -1.19, -92.09
+
+Tag 1:
+  [Original] Position (x,y,z): 0.5092, 0.0161, 0.2516
+  [Original] Orientation (Roll, Pitch, Yaw) [deg]: 0.21, 1.57, 179.14
+  [Rotated Z90X90] Orientation (Roll, Pitch, Yaw) [deg]: 91.57, -0.21, -90.86
+
+Tag 4:
+  [Original] Position (x,y,z): 0.5032, -0.1528, 0.2687
+  [Original] Orientation (Roll, Pitch, Yaw) [deg]: -0.16, 1.33, 179.96
+  [Rotated Z90X90] Orientation (Roll, Pitch, Yaw) [deg]: 91.33, 0.16, -90.04
+
+--- Golden Box Poses ---
+Box box_1:
+  Position (x,y,z): 0.4953, 0.0101, 0.2553
+  Orientation (Roll, Pitch, Yaw) [deg]: 91.77, 0.00, -90.17
+
+Box box_2:
+  Position (x,y,z): 0.4957, 0.0101, 0.4021
+  Orientation (Roll, Pitch, Yaw) [deg]: 90.60, 0.00, -90.68
+
+Box box_3:
+  Position (x,y,z): 0.4933, -0.1509, 0.2703
+  Orientation (Roll, Pitch, Yaw) [deg]: 89.68, 0.00, -89.88
