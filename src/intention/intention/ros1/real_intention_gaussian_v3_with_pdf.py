@@ -279,7 +279,7 @@ class RealIntentionGaussian:
         self.eef_pose_state = State(topic=None, frame_id="VGC")
         self.eef_twist_state = EEF_Twist_Subscriber("/calculated_twist")
         # self.box_manager = BoxManager("/april_box")
-        self.box_manager = BoxManager("/real_box/eb")
+        self.box_manager = BoxManager("/real_box")
 
         # Variables
         self.mean = np.array([0, 0])

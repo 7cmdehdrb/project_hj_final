@@ -43,7 +43,7 @@ from geometry_msgs.msg import (
 from sensor_msgs.msg import JointState, Joy
 from std_msgs.msg import ColorRGBA, Header
 from rclpy.qos import QoSProfile, qos_profile_system_default
-from tf2_ros import Buffer, TransformBroadcaster, TransformException, TransformListener
+from tf2_ros import Buffer, TransformBroadcaster, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
 # Replace this import path with the actual package/module path in your ROS2 workspace.
@@ -64,9 +64,10 @@ from rotutils import (
 
 NODE_NAME = "intention_transform_node"
 
-REAL_BOX_TOPIC = "/real_box/eb"
+REAL_BOX_TOPIC = "/real_box"
 VIRTUAL_BOX_TOPIC = "/virtual_box"
 BEST_BOX_SELECTED_TOPIC = "/best_box/selected"
+DEBUG_MARKER_TOPIC = "/intention/debug_markers"
 
 JOINT_STATE_TOPIC = "/joint_states"
 JOY_TOPIC = "/controller/right/joy"
@@ -91,6 +92,11 @@ MIN_INTERSECTION_SAMPLES = 3
 MANIPULATOR_LENGTH_R = 1.125
 GAIN_DISTANCE_A = 1.0
 MAX_INTERSECTION_T = 30.0
+MIN_TOOL_SPEED = 1e-4
+MIN_GAIN_TOTAL = 1e-8
+MAX_DEBUG_INTERSECTION_POINTS = 200
+DEBUG_LOG_PERIOD_SEC = 1.0
+PLANE_MARKER_SIZE = 1.2
 
 # Plane generation mode.
 # False: use the predefined plane below.
@@ -209,6 +215,106 @@ def copy_marker_for_best_box(
     if marker.scale.x == 0.0 and marker.scale.y == 0.0 and marker.scale.z == 0.0:
         marker.scale = BEST_BOX_SCALE_FALLBACK
 
+    return marker
+
+
+def make_delete_all_marker(stamp: TimeMsg, frame_id: str) -> Marker:
+    marker = Marker()
+    marker.header = Header(stamp=stamp, frame_id=frame_id)
+    marker.action = Marker.DELETEALL
+    return marker
+
+
+def make_plane_marker(
+    plane: "Plane",
+    frame_id: str,
+    stamp: TimeMsg,
+    marker_id: int,
+    namespace: str,
+    color: ColorRGBA,
+    size: float = PLANE_MARKER_SIZE,
+) -> Marker:
+    marker = Marker()
+    marker.header = Header(stamp=stamp, frame_id=frame_id)
+    marker.ns = namespace
+    marker.id = marker_id
+    marker.type = Marker.TRIANGLE_LIST
+    marker.action = Marker.ADD
+    marker.pose.orientation.w = 1.0
+    marker.scale = Vector3(x=1.0, y=1.0, z=1.0)
+    marker.color = color
+
+    center = -plane.d * plane.n
+    u = np.array([-plane.n[1], plane.n[0], 0.0], dtype=float)
+    if np.linalg.norm(u) < 1e-12:
+        u = np.array([0.0, -plane.n[2], plane.n[1]], dtype=float)
+    u = u / np.linalg.norm(u)
+    v = np.cross(plane.n, u)
+    v = v / np.linalg.norm(v)
+
+    half = float(size) * 0.5
+    corners = [
+        center - half * u - half * v,
+        center + half * u - half * v,
+        center + half * u + half * v,
+        center - half * u + half * v,
+    ]
+    triangles = [corners[0], corners[1], corners[2], corners[0], corners[2], corners[3]]
+    marker.points = [
+        Point(x=float(p[0]), y=float(p[1]), z=float(p[2])) for p in triangles
+    ]
+    return marker
+
+
+def make_points_marker(
+    points: np.ndarray,
+    frame_id: str,
+    stamp: TimeMsg,
+    marker_id: int,
+    namespace: str,
+    color: ColorRGBA,
+    point_scale: float = 0.025,
+) -> Marker:
+    marker = Marker()
+    marker.header = Header(stamp=stamp, frame_id=frame_id)
+    marker.ns = namespace
+    marker.id = marker_id
+    marker.type = Marker.POINTS
+    marker.action = Marker.ADD
+    marker.pose.orientation.w = 1.0
+    marker.scale = Vector3(x=point_scale, y=point_scale, z=point_scale)
+    marker.color = color
+
+    if points.size > 0:
+        valid = points[~np.isnan(points).any(axis=1)]
+        valid = valid[-MAX_DEBUG_INTERSECTION_POINTS:]
+        marker.points = [
+            Point(x=float(p[0]), y=float(p[1]), z=float(p[2])) for p in valid
+        ]
+    return marker
+
+
+def make_sphere_marker(
+    point: np.ndarray,
+    frame_id: str,
+    stamp: TimeMsg,
+    marker_id: int,
+    namespace: str,
+    color: ColorRGBA,
+    scale: float = 0.055,
+) -> Marker:
+    marker = Marker()
+    marker.header = Header(stamp=stamp, frame_id=frame_id)
+    marker.ns = namespace
+    marker.id = marker_id
+    marker.type = Marker.SPHERE
+    marker.action = Marker.ADD
+    marker.pose.position = Point(
+        x=float(point[0]), y=float(point[1]), z=float(point[2])
+    )
+    marker.pose.orientation.w = 1.0
+    marker.scale = Vector3(x=scale, y=scale, z=scale)
+    marker.color = color
     return marker
 
 
@@ -364,6 +470,8 @@ class BoxManager:
         # The incoming MarkerArray is a full fresh observation, but missing markers
         # are intentionally not deleted because transient perception dropout is possible.
         for marker in msg.markers:
+            marker: Marker
+
             if marker.action == Marker.DELETEALL:
                 continue
             if marker.action == Marker.DELETE:
@@ -417,7 +525,7 @@ class Robot:
                 Time(),
                 timeout=Duration(seconds=TF_LOOKUP_TIMEOUT_SEC),
             )
-        except TransformException as exc:
+        except Exception as exc:
             self.node.get_logger().warn(
                 f"Failed to lookup TF {target_frame} -> {TOOL_FRAME}: {exc}"
             )
@@ -468,8 +576,13 @@ class Intention:
             theta: float, trust_threshold: float, distrust_threshold: float
         ) -> float:
             theta = abs(float(theta))
-            trust_threshold = float(trust_threshold)
-            distrust_threshold = float(distrust_threshold)
+            trust_threshold = max(0.0, float(trust_threshold))
+            distrust_threshold = max(0.0, float(distrust_threshold))
+            if distrust_threshold < trust_threshold:
+                trust_threshold, distrust_threshold = (
+                    distrust_threshold,
+                    trust_threshold,
+                )
 
             if theta < trust_threshold:
                 return 1.0
@@ -486,13 +599,16 @@ class Intention:
 
         @staticmethod
         def get_theta(v: np.ndarray, plane: Plane) -> float:
-            if np.linalg.norm(v) < 1e-12:
+            v_norm = float(np.linalg.norm(v))
+            if v_norm < MIN_TOOL_SPEED:
                 return 0.0
 
-            numerator = float(np.dot(v, plane.n))
-            denominator = float(np.linalg.norm(v) * np.linalg.norm(plane.n))
-            cos_value = float(np.clip(numerator / denominator, -1.0, 1.0))
-            return float(np.arccos(cos_value) % (2.0 * np.pi))
+            # Use the acute angle to the plane normal. The previous signed-normal
+            # angle could approach pi when the tool moved toward the opposite side
+            # of the same plane, which drove gain_theta to 0 even for valid motion.
+            denominator = v_norm * float(np.linalg.norm(plane.n))
+            cos_value = float(np.clip(abs(np.dot(v, plane.n)) / denominator, -1.0, 1.0))
+            return float(np.arccos(cos_value))
 
         @staticmethod
         def get_intersection_point(
@@ -561,7 +677,9 @@ class Intention:
 
                 theta_d_max = math.atan((radius_on_plane + lateral_distance) / d)
                 theta_d_min = math.atan((radius_on_plane - lateral_distance) / d)
-                return float(theta_d_min), float(theta_d_max)
+                theta_d_min = max(0.0, float(theta_d_min))
+                theta_d_max = max(theta_d_min, float(theta_d_max))
+                return theta_d_min, theta_d_max
 
             return 0.0, 0.0
 
@@ -593,6 +711,57 @@ class Intention:
 
         self.last_direction_forward = True
         self.best_box: Optional[BestBox] = None
+        self._last_log_times: Dict[str, float] = {}
+
+    def _log_throttled(
+        self,
+        key: str,
+        level: str,
+        message: str,
+        period_sec: float = DEBUG_LOG_PERIOD_SEC,
+    ) -> None:
+        """Log with simple time throttling.
+
+        Do not call logger methods through getattr() from a single source line.
+        rclpy associates throttled logger call sites with severity, and using the
+        same call site for both INFO and WARN can raise:
+        ValueError: Logger severity cannot be changed between calls.
+        """
+        return
+        now_sec = self.node.get_clock().now().nanoseconds * 1e-9
+        last_sec = self._last_log_times.get(key, -1.0e30)
+        if now_sec - last_sec < period_sec:
+            return
+        self._last_log_times[key] = now_sec
+
+        logger = self.node.get_logger()
+        if level == "debug":
+            logger.debug(message)
+        elif level == "info":
+            logger.info(message)
+        elif level == "warn" or level == "warning":
+            logger.warn(message)
+        elif level == "error":
+            logger.error(message)
+        else:
+            logger.info(message)
+
+    def get_debug_points(self) -> np.ndarray:
+        return self.intersections.copy()
+
+    def get_mean_3d_for_debug(self) -> Optional[np.ndarray]:
+        if (
+            not self.has_distribution
+            or len(self.intersections) < MIN_INTERSECTION_SAMPLES
+        ):
+            return None
+        weight_sum = float(np.sum(self.gains))
+        if weight_sum <= MIN_GAIN_TOTAL:
+            return None
+        try:
+            return np.average(self.intersections, axis=0, weights=self.gains)
+        except Exception:
+            return None
 
     def reset(self) -> None:
         self.mean_2d = np.zeros(2, dtype=float)
@@ -612,10 +781,24 @@ class Intention:
     def update_distribution(self) -> bool:
         tool_state = self.robot.get_tool_state(self.eef_target_frame)
         if tool_state is None:
+            self._log_throttled(
+                "no_tool_state",
+                "warn",
+                f"[{self.name}] cannot update distribution: TF for {self.eef_target_frame} -> {TOOL_FRAME} is unavailable",
+            )
             return False
 
         p = tool_state.position
         v = tool_state.linear_velocity
+        speed = float(np.linalg.norm(v))
+        if speed < MIN_TOOL_SPEED:
+            self._log_throttled(
+                "low_speed",
+                "info",
+                f"[{self.name}] distribution not updated: tool speed is too small "
+                f"speed={speed:.6e}, p={p.tolist()}",
+            )
+            return False
 
         distance_between_plane = self.plane.distance(p)
         theta_between_plane = self.IntersectionMethod.get_theta(v, self.plane)
@@ -630,38 +813,113 @@ class Intention:
         gain_distance = self.IntersectionMethod.get_gain_distance(
             distance_between_plane, GAIN_DISTANCE_A
         )
-        gain_theta = self.IntersectionMethod.get_gain_theta(
-            theta_between_plane,
-            trust_theta,
-            distrust_theta,
-        )
+        gain_theta = (
+            self.IntersectionMethod.get_gain_theta(
+                theta_between_plane,
+                trust_theta,
+                distrust_theta,
+            )
+            + 1e-6
+        )  # Avoid zero gain when theta is slightly above distrust threshold.
         gain_total = gain_distance * gain_theta
+        print(
+            f"Gain total: {gain_total:.3e}, Gain distance: {gain_distance:.3e}, Gain theta: {gain_theta:.3e}"
+        )
 
         if np.isnan(intersection).any():
+            print(
+                f"Invalid intersection: v is nearly parallel to plane or contains NaN. "
+                f"speed={speed:.6e}, distance={distance_between_plane:.6f}, "
+                f"theta={theta_between_plane:.6f}, plane_n={self.plane.n.tolist()}, d={self.plane.d:.6f}"
+            )
+
+            self._log_throttled(
+                "invalid_intersection",
+                "warn",
+                f"[{self.name}] invalid intersection: v is nearly parallel to plane or contains NaN. "
+                f"speed={speed:.6e}, distance={distance_between_plane:.6f}, "
+                f"theta={theta_between_plane:.6f}, plane_n={self.plane.n.tolist()}, d={self.plane.d:.6f}",
+            )
+            return False
+
+        if gain_total <= MIN_GAIN_TOTAL:
+            self._log_throttled(
+                "zero_gain",
+                "warn",
+                f"[{self.name}] intersection rejected because gain is too small. "
+                f"gain_total={gain_total:.3e}, gain_distance={gain_distance:.3e}, "
+                f"gain_theta={gain_theta:.3e}, theta={theta_between_plane:.4f}, "
+                f"trust={trust_theta:.4f}, distrust={distrust_theta:.4f}, "
+                f"forward={forward}, distance={distance_between_plane:.4f}, "
+                f"p={p.tolist()}, v={v.tolist()}, intersection={intersection.tolist()}",
+            )
+            print(
+                f"Rejected intersection: gain_total={gain_total:.3e}, gain_distance={gain_distance:.3e}, "
+            )
             return False
 
         if forward:
+            print(
+                "Forward intersection accepted: gain_total={gain_total:.3e}, gain_distance={gain_distance:.3e}, "
+            )
             if self.last_direction_forward != forward:
                 if len(self.reverse_distances) > 2:
                     max_reverse_dist = np.max(self.reverse_distances)
                     mask = self.distances > max_reverse_dist
+                    removed = int(len(self.intersections) - np.count_nonzero(mask))
                     self.intersections = self.intersections[mask]
                     self.gains = self.gains[mask]
                     self.distances = self.distances[mask]
+                    self._log_throttled(
+                        "reverse_prune",
+                        "info",
+                        f"[{self.name}] pruned stale intersections after direction change: "
+                        f"removed={removed}, remaining={len(self.intersections)}",
+                    )
 
                 self.reverse_distances = np.empty(0, dtype=float)
 
             self.intersections = np.vstack([self.intersections, intersection])
             self.gains = np.append(self.gains, gain_total)
             self.distances = np.append(self.distances, distance_between_plane)
+            self._log_throttled(
+                "accepted_intersection",
+                "info",
+                f"[{self.name}] accepted intersection: samples={len(self.intersections)}, "
+                f"weight_sum={float(np.sum(self.gains)):.3e}, gain={gain_total:.3e}, "
+                f"distance={distance_between_plane:.4f}, theta={theta_between_plane:.4f}",
+            )
         else:
             self.reverse_distances = np.append(
                 self.reverse_distances, distance_between_plane
+            )
+            self._log_throttled(
+                "behind_plane",
+                "info",
+                f"[{self.name}] intersection is behind current tool motion; not appended. "
+                f"reverse_samples={len(self.reverse_distances)}, distance={distance_between_plane:.4f}",
             )
 
         self.last_direction_forward = forward
 
         if len(self.intersections) < MIN_INTERSECTION_SAMPLES:
+            self._log_throttled(
+                "not_enough_samples",
+                "info",
+                f"[{self.name}] waiting for more valid intersections: "
+                f"samples={len(self.intersections)}/{MIN_INTERSECTION_SAMPLES}",
+            )
+            return False
+
+        weight_sum = float(np.sum(self.gains))
+        if weight_sum <= MIN_GAIN_TOTAL:
+            self._log_throttled(
+                "weight_sum_small",
+                "warn",
+                f"[{self.name}] distribution update skipped: weight_sum is too small. "
+                f"samples={len(self.intersections)}, weight_sum={weight_sum:.3e}, "
+                f"min_gain={float(np.min(self.gains)):.3e}, max_gain={float(np.max(self.gains)):.3e}",
+            )
             return False
 
         try:
@@ -670,23 +928,49 @@ class Intention:
                 self.gains,
             )
             mean_2d, cov_2d = self.plane.transform_to_2d(mean_3d, cov_3d)
+
+            print(f"Mean 2D: {self.mean_2d}, Cov 2D: {self.cov_2d}")
         except Exception as exc:
             self.node.get_logger().warn(
-                f"[{self.name}] distribution update failed: {exc}"
+                f"[{self.name}] distribution update failed: {exc}. "
+                f"samples={len(self.intersections)}, weight_sum={weight_sum:.3e}, "
+                f"speed={speed:.6e}, distance={distance_between_plane:.6f}, "
+                f"theta={theta_between_plane:.6f}, trust={trust_theta:.6f}, "
+                f"distrust={distrust_theta:.6f}"
             )
             return False
 
         self.mean_2d = mean_2d
         self.cov_2d = cov_2d + np.eye(2) * 1e-9
         self.has_distribution = True
+        self._log_throttled(
+            "distribution_ok",
+            "info",
+            f"[{self.name}] distribution updated: mean_2d={self.mean_2d.tolist()}, "
+            f"cov_diag={np.diag(self.cov_2d).tolist()}, samples={len(self.intersections)}, "
+            f"weight_sum={weight_sum:.3e}",
+        )
+
+        print(f"Mean 2D: {self.mean_2d}, Cov 2D: {self.cov_2d}")
+
         return True
 
     def update_best_box(self) -> Optional[BestBox]:
         if not self.has_distribution:
+            self._log_throttled(
+                "no_distribution_for_best_box",
+                "info",
+                f"[{self.name}] best box not updated: distribution is not ready",
+            )
             return self.best_box
 
         boxes = self.box_manager.get_boxes()
         if not boxes:
+            self._log_throttled(
+                "no_boxes",
+                "warn",
+                f"[{self.name}] best box not updated: no boxes received on {self.box_manager.topic}",
+            )
             return self.best_box
 
         try:
@@ -777,6 +1061,12 @@ class IntentionTransformNode(Node):
             BEST_BOX_SELECTED_TOPIC,
             10,
         )
+        self.debug_marker_pub = self.create_publisher(
+            MarkerArray,
+            DEBUG_MARKER_TOPIC,
+            10,
+        )
+        self._last_node_log_times: Dict[str, float] = {}
 
         self.joy_sub = self.create_subscription(
             Joy,
@@ -797,11 +1087,38 @@ class IntentionTransformNode(Node):
             self.tf_timer_callback,
         )
 
+        self._is_plane_updated = False
         self.get_logger().info(
             f"{NODE_NAME} started. real_topic={REAL_BOX_TOPIC}, "
             f"virtual_topic={VIRTUAL_BOX_TOPIC}, tool_frame={TOOL_FRAME}, "
-            f"ignore_orientation={IGNORE_ORIENTATION}"
+            f"ignore_orientation={IGNORE_ORIENTATION}, debug_marker_topic={DEBUG_MARKER_TOPIC}"
         )
+
+    def _log_throttled(
+        self,
+        key: str,
+        level: str,
+        message: str,
+        period_sec: float = DEBUG_LOG_PERIOD_SEC,
+    ) -> None:
+        """Log with simple time throttling using severity-specific call sites."""
+        now_sec = self.get_clock().now().nanoseconds * 1e-9
+        last_sec = self._last_node_log_times.get(key, -1.0e30)
+        if now_sec - last_sec < period_sec:
+            return
+        self._last_node_log_times[key] = now_sec
+
+        logger = self.get_logger()
+        if level == "debug":
+            logger.debug(message)
+        elif level == "info":
+            logger.info(message)
+        elif level == "warn" or level == "warning":
+            logger.warn(message)
+        elif level == "error":
+            logger.error(message)
+        else:
+            logger.info(message)
 
     def joy_callback(self, msg: Joy) -> None:
         if RESET_BUTTON_INDEX >= len(msg.buttons):
@@ -816,20 +1133,120 @@ class IntentionTransformNode(Node):
             self.virtual_intention.reset()
 
     def intention_timer_callback(self) -> None:
-        self.update_plane_if_enabled()
+        if self._is_plane_updated is False:
+            self.update_plane_if_enabled()
+
         self.real_intention.update()
         self.virtual_intention.update()
         self.publish_selected_best_boxes()
+        self.publish_debug_markers()
 
     def update_plane_if_enabled(self) -> None:
         if not USE_REGRESSED_PLANE_FROM_REAL_BOXES:
             return
 
-        updated = self.plane.fit_from_boxes(self.real_intention.box_manager.get_boxes())
-        if updated:
-            self.get_logger().debug(
-                f"Regressed plane updated: n={self.plane.n.tolist()}, d={self.plane.d:.6f}"
+        real_boxes = self.real_intention.box_manager.get_boxes()
+        if len(real_boxes) < MIN_PLANE_REGRESSION_BOXES:
+            self._log_throttled(
+                "plane_waiting_boxes",
+                "info",
+                f"Plane regression waiting for boxes: "
+                f"real_boxes={len(real_boxes)}/{MIN_PLANE_REGRESSION_BOXES}. "
+                f"Using fallback/current plane n={self.plane.n.tolist()}, d={self.plane.d:.6f}",
             )
+            return
+
+        updated = self.plane.fit_from_boxes(real_boxes)
+        if updated:
+            self._log_throttled(
+                "plane_updated",
+                "info",
+                f"Regressed plane updated: n={self.plane.n.tolist()}, d={self.plane.d:.6f}, "
+                f"real_boxes={len(real_boxes)}",
+            )
+            self._is_plane_updated = True
+        else:
+            self._log_throttled(
+                "plane_failed",
+                "warn",
+                f"Plane regression failed. Check whether real box centers are nearly collinear. "
+                f"real_boxes={len(real_boxes)}",
+            )
+
+    def publish_debug_markers(self) -> None:
+        stamp = now_msg(self)
+        marker_array = MarkerArray()
+        marker_array.markers.append(make_delete_all_marker(stamp, MAP_FRAME))
+
+        marker_array.markers.append(
+            make_plane_marker(
+                self.plane,
+                BASE_FRAME,
+                stamp,
+                10,
+                "estimated_plane_base_frame",
+                ColorRGBA(r=1.0, g=0.8, b=0.0, a=0.22),
+            )
+        )
+        marker_array.markers.append(
+            make_plane_marker(
+                self.plane,
+                MAP_FRAME,
+                stamp,
+                11,
+                "estimated_plane_map_frame",
+                ColorRGBA(r=0.0, g=0.8, b=1.0, a=0.18),
+            )
+        )
+
+        marker_array.markers.append(
+            make_points_marker(
+                self.real_intention.get_debug_points(),
+                BASE_FRAME,
+                stamp,
+                20,
+                "real_intersection_points",
+                ColorRGBA(r=1.0, g=0.1, b=0.1, a=0.95),
+            )
+        )
+        marker_array.markers.append(
+            make_points_marker(
+                self.virtual_intention.get_debug_points(),
+                MAP_FRAME,
+                stamp,
+                21,
+                "virtual_intersection_points",
+                ColorRGBA(r=0.1, g=0.4, b=1.0, a=0.95),
+            )
+        )
+
+        real_mean = self.real_intention.get_mean_3d_for_debug()
+        if real_mean is not None:
+            marker_array.markers.append(
+                make_sphere_marker(
+                    real_mean,
+                    BASE_FRAME,
+                    stamp,
+                    30,
+                    "real_intersection_weighted_mean",
+                    ColorRGBA(r=1.0, g=0.0, b=0.0, a=1.0),
+                )
+            )
+
+        virtual_mean = self.virtual_intention.get_mean_3d_for_debug()
+        if virtual_mean is not None:
+            marker_array.markers.append(
+                make_sphere_marker(
+                    virtual_mean,
+                    MAP_FRAME,
+                    stamp,
+                    31,
+                    "virtual_intersection_weighted_mean",
+                    ColorRGBA(r=0.0, g=0.2, b=1.0, a=1.0),
+                )
+            )
+
+        self.debug_marker_pub.publish(marker_array)
 
     def publish_selected_best_boxes(self) -> None:
         real_best = self.real_intention.get_best_box()
@@ -905,7 +1322,7 @@ class IntentionTransformNode(Node):
                 Time(),
                 timeout=Duration(seconds=TF_LOOKUP_TIMEOUT_SEC),
             )
-        except TransformException as exc:
+        except Exception as exc:
             self.get_logger().warn(
                 f"Fallback TF lookup failed {MAP_FRAME} -> {BASE_FRAME}: {exc}"
             )
