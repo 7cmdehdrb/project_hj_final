@@ -367,3 +367,4 @@ AMENT_IGNORE
 *.apk
 *.unity
 *.unitypackage
+/rosbag

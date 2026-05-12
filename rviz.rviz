@@ -7,11 +7,17 @@ Panels:
         - /Global Options1
         - /Status1
         - /TF1/Frames1
-        - /RobotModel1
+        - /TF1/Tree1
         - /RobotModel1/Description Topic1
-        - /MarkerArray2
+        - /RobotModel2/Status1
+        - /RobotModel2/Description Topic1
+        - /MarkerArray3/Namespaces1
+        - /MarkerArray4
+        - /MarkerArray4/Namespaces1
+        - /Image1
+        - /PointCloud22
       Splitter Ratio: 0.5
-    Tree Height: 1079
+    Tree Height: 775
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -29,7 +35,55 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PointCloud2
+  - Class: rviz_common/Displays
+    Help Height: 70
+    Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.5
+    Tree Height: 371
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: moveit_task_constructor/Motion Planning Tasks
+    Global Settings:
+      Task View Settings:
+        Old task handling: Keep
+        Show Computation Times: true
+        Task Expansion: All Expanded
+    Name: Motion Planning Tasks
+    Tasks View:
+      property_splitter:
+        - 148
+        - 148
+      solution_sorting:
+        column: 0
+        order: 1
+      solutions_splitter:
+        - 48
+        - 48
+      solutions_view_columns: ~
+      tasks_view_columns: ~
+  - Class: nav2_rviz_plugins/Navigation 2
+    Name: Navigation 2
+  - Class: rviz_common/Tool Properties
+    Expanded: ~
+    Name: Tool Properties
+    Splitter Ratio: 0.5
+  - Class: rviz_common/Transformation
+    Name: Transformation
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: rviz_visual_tools/RvizVisualToolsGui
+    Name: RvizVisualToolsGui
+  - Class: slam_toolbox::SlamToolboxPlugin
+    Name: SlamToolboxPlugin
 Visualization Manager:
   Class: ""
   Displays:
@@ -62,6 +116,22 @@ Visualization Manager:
           Value: true
         base_link_inertia:
           Value: false
+        box_1:
+          Value: false
+        box_2:
+          Value: false
+        box_3:
+          Value: false
+        camera_color_frame:
+          Value: false
+        camera_color_optical_frame:
+          Value: false
+        camera_depth_frame:
+          Value: false
+        camera_depth_optical_frame:
+          Value: false
+        camera_link:
+          Value: true
         elbow_joint:
           Value: false
         flange:
@@ -71,13 +141,13 @@ Visualization Manager:
         ft_frame:
           Value: false
         left_controller:
-          Value: true
+          Value: false
         map:
-          Value: true
+          Value: false
         mobile:
           Value: false
         right_controller:
-          Value: true
+          Value: false
         shoulder_lift_joint:
           Value: false
         shoulder_link:
@@ -85,17 +155,41 @@ Visualization Manager:
         shoulder_pan_joint:
           Value: false
         tool0:
-          Value: true
+          Value: false
         tool0_controller:
           Value: false
         upper_arm_link:
           Value: false
         ur5e:
           Value: false
+        virtual_base:
+          Value: false
         virtual_base_link:
           Value: true
+        virtual_base_link_inertia:
+          Value: false
+        virtual_flange:
+          Value: false
+        virtual_forearm_link:
+          Value: false
+        virtual_ft_frame:
+          Value: false
+        virtual_shoulder_link:
+          Value: false
+        virtual_tool0:
+          Value: false
+        virtual_upper_arm_link:
+          Value: false
+        virtual_world:
+          Value: false
+        virtual_wrist_1_link:
+          Value: false
+        virtual_wrist_2_link:
+          Value: false
+        virtual_wrist_3_link:
+          Value: false
         world:
-          Value: true
+          Value: false
         wrist_1_joint:
           Value: false
         wrist_1_link:
@@ -109,35 +203,60 @@ Visualization Manager:
         wrist_3_link:
           Value: false
         xr_head:
-          Value: true
+          Value: false
         xr_origin:
-          Value: true
+          Value: false
       Marker Scale: 1
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
       Tree:
-        map:
-          virtual_base_link:
-            {}
         world:
-          base_link:
-            base:
-              tool0_controller:
-                {}
-            base_link_inertia:
-              shoulder_link:
-                upper_arm_link:
-                  forearm_link:
-                    wrist_1_link:
-                      wrist_2_link:
-                        wrist_3_link:
-                          flange:
-                            tool0:
+          map:
+            base_link:
+              base:
+                tool0_controller:
+                  camera_link:
+                    camera_color_frame:
+                      camera_color_optical_frame:
+                        {}
+                    camera_depth_frame:
+                      camera_depth_optical_frame:
+                        {}
+              base_link_inertia:
+                shoulder_link:
+                  upper_arm_link:
+                    forearm_link:
+                      wrist_1_link:
+                        wrist_2_link:
+                          wrist_3_link:
+                            flange:
+                              tool0:
+                                {}
+                            ft_frame:
                               {}
-                          ft_frame:
-                            {}
+              box_1:
+                {}
+              box_2:
+                {}
+              box_3:
+                {}
+            virtual_base_link:
+              virtual_base:
+                {}
+              virtual_base_link_inertia:
+                virtual_shoulder_link:
+                  virtual_upper_arm_link:
+                    virtual_forearm_link:
+                      virtual_wrist_1_link:
+                        virtual_wrist_2_link:
+                          virtual_wrist_3_link:
+                            virtual_flange:
+                              virtual_tool0:
+                                {}
+                            virtual_ft_frame:
+                              {}
           mobile:
             ur5e:
               shoulder_pan_joint:
@@ -167,6 +286,32 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /robot_description
+      Enabled: false
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: RobotModel
+      TF Prefix: ""
+      Update Interval: 0
+      Value: false
+      Visual Enabled: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /virtual_robot_description
       Enabled: true
       Links:
         All Links Enabled: true
@@ -174,61 +319,61 @@ Visualization Manager:
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
-        base:
+        virtual_base:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        base_link:
+        virtual_base_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        base_link_inertia:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        flange:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        forearm_link:
+        virtual_base_link_inertia:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        ft_frame:
+        virtual_flange:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        shoulder_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        tool0:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        upper_arm_link:
+        virtual_forearm_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        world:
+        virtual_ft_frame:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        wrist_1_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        wrist_2_link:
+        virtual_shoulder_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        wrist_3_link:
+        virtual_tool0:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        virtual_upper_arm_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        virtual_world:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        virtual_wrist_1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        virtual_wrist_2_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        virtual_wrist_3_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -241,20 +386,78 @@ Visualization Manager:
       Update Interval: 0
       Value: true
       Visual Enabled: true
-    - Class: rviz_default_plugins/MarkerArray
+    - Alpha: 0.5
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: RGB8
+      Decay Time: 0
       Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /pcd_cloud
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: false
       Name: MarkerArray
       Namespaces:
-        virtual_boxes: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /virtual_box
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
+      Enabled: false
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /real_box
+      Value: false
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: false
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /intention/debug_markers
+      Value: false
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: false
       Name: MarkerArray
       Namespaces:
         {}
@@ -264,7 +467,55 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /best_box/selected
-      Value: true
+      Value: false
+    - Class: rviz_default_plugins/Image
+      Enabled: false
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /camera/camera/color/image_rect_raw
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /camera/camera/depth/color/points
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -311,41 +562,53 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3.3797824382781982
+      Distance: 1.6196082830429077
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.15726161003112793
-        Y: 0.3234212100505829
-        Z: 0.8266063332557678
+        X: 0.6565245985984802
+        Y: -0.06929150223731995
+        Z: 0.3668151795864105
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.0697970390319824
+      Pitch: 0.00979737751185894
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 6.2785725593566895
+      Yaw: 1.418604850769043
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
   Height: 1376
-  Hide Left Dock: false
+  Hide Left Dock: true
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd000000040000000000000156000004c2fc0200000008fb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000003d000004c2000000c900fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261000000010000010f000004c2fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073010000003d000004c2000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000009ba0000003efc0100000002fb0000000800540069006d00650100000000000009ba000002fb00fffffffb0000000800540069006d0065010000000000000450000000000000000000000749000004c200000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Image:
+    collapsed: true
+  Motion Planning Tasks:
+    collapsed: false
+  Navigation 2:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000003000000000000039f00000506fc0200000012fb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073000000003d00000392000000c900fffffffb0000000800540069006d006500000003d50000003e0000003900fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000000a0049006d00610067006500000004190000012a0000002800fffffffb000000100044006900730070006c006100790073000000040100000142000000c900fffffffc00000482000000c10000000000fffffffaffffffff0100000002fb0000000a005600690065007700730000000000ffffffff0000010000fffffffb0000000a0056006900650077007300000000000000039f0000010000fffffffb0000002a004d006f00740069006f006e00200050006c0061006e006e0069006e00670020005400610073006b00730000000179000000e7000000e700fffffffb00000018004e0061007600690067006100740069006f006e0020003200000001ae000001720000013900fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007300000003a50000005c0000005c00fffffffb0000001c005400720061006e00730066006f0072006d006100740069006f006e00000003c8000000800000007b00fffffffb00000024005200760069007a00560069007300750061006c0054006f006f006c00730047007500690000000462000000e10000004100fffffffb000000220053006c0061006d0054006f006f006c0062006f00780050006c007500670069006e00000002b50000028e0000018500ffffff000000010000010000000506fc0200000002fb0000000a00560069006500770073010000003d00000506000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b2000000000000000000000003000009ba0000003efc0100000001fb0000000800540069006d00650100000000000004500000000000000000000003d70000050600000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  RvizVisualToolsGui:
+    collapsed: false
   Selection:
     collapsed: false
-  Time:
+  SlamToolboxPlugin:
     collapsed: false
+  Time:
+    collapsed: true
   Tool Properties:
+    collapsed: false
+  Transformation:
     collapsed: false
   Views:
     collapsed: false
-  Width: 2490
-  X: 1150
-  Y: 270
+  Width: 1245
+  X: 1315
+  Y: 27

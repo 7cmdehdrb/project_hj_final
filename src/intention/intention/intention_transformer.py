@@ -79,6 +79,9 @@ TOOL_FRAME = "tool0"
 VIRTUAL_BASE_FRAME = "virtual_base_link"
 
 # If True, box orientations are ignored during final TF alignment.
+# Box poses are normalized to MAP_FRAME when they are received.
+# Final alignment treats the selected real and virtual boxes as the same box in
+# each robot's base frame:
 # False: T_map_virtual_base = T_map_virtual_box @ inv(T_base_real_box)
 # True : p_map_virtual_base = p_map_virtual_box - p_base_real_box, q = identity
 IGNORE_ORIENTATION = False
@@ -101,12 +104,12 @@ PLANE_MARKER_SIZE = 1.2
 # Plane generation mode.
 # False: use the predefined plane below.
 # True : estimate the plane from RealBox MarkerArray centers by least-squares/PCA.
-USE_REGRESSED_PLANE_FROM_REAL_BOXES = True
+USE_REGRESSED_PLANE_FROM_REAL_BOXES = False
 
 # Predefined plane parameters from the previous implementation.
 # Used either as the fixed plane, or as the initial/fallback plane before enough RealBox data arrives.
-PLANE_NORMAL = np.array([0.99887537, 0.0465492, 0.00900962], dtype=float)
-PLANE_D = -0.8969238154115642
+PLANE_NORMAL = np.array([1.0, 0.0, 0.0], dtype=float)
+PLANE_D = -0.6
 
 # At least 3 non-collinear points are required to fit a plane.
 MIN_PLANE_REGRESSION_BOXES = 3
@@ -194,6 +197,25 @@ def matrix_to_transform_stamped(
                 z=float(qz),
                 w=float(qw),
             ),
+        ),
+    )
+
+
+def matrix_to_pose(mat: np.ndarray) -> Pose:
+    translation, rotation = decompose_transform(np.asarray(mat, dtype=float))
+    qx, qy, qz, qw = quaternion_from_rotation_matrix(rotation)
+
+    return Pose(
+        position=Point(
+            x=float(translation[0]),
+            y=float(translation[1]),
+            z=float(translation[2]),
+        ),
+        orientation=Quaternion(
+            x=float(qx),
+            y=float(qy),
+            z=float(qz),
+            w=float(qw),
         ),
     )
 
@@ -452,10 +474,20 @@ class Plane:
 
 
 class BoxManager:
-    def __init__(self, node: Node, topic: str, expected_frame: str, name: str):
+    def __init__(
+        self,
+        node: Node,
+        topic: str,
+        default_source_frame: str,
+        target_frame: str,
+        tf_buffer: Buffer,
+        name: str,
+    ):
         self.node = node
         self.topic = topic
-        self.expected_frame = expected_frame
+        self.default_source_frame = default_source_frame
+        self.target_frame = target_frame
+        self.tf_buffer = tf_buffer
         self.name = name
         self.boxes: Dict[int, BoxRecord] = {}
 
@@ -465,6 +497,41 @@ class BoxManager:
             self.callback,
             qos_profile=SUBSCRIPTION_QOS,
         )
+
+    def transform_marker_to_target_frame(self, marker: Marker) -> Optional[Marker]:
+        source_frame = marker.header.frame_id or self.default_source_frame
+        marker_in_target = copy.deepcopy(marker)
+
+        if source_frame != self.default_source_frame:
+            self.node.get_logger().warn(
+                f"[{self.name}] marker frame_id='{source_frame}' differs from "
+                f"default_source_frame='{self.default_source_frame}'. "
+                f"The marker will still be transformed to '{self.target_frame}'."
+            )
+
+        if source_frame == self.target_frame:
+            marker_in_target.header.frame_id = self.target_frame
+            return marker_in_target
+
+        try:
+            target_to_source = self.tf_buffer.lookup_transform(
+                self.target_frame,
+                source_frame,
+                Time(),
+                timeout=Duration(seconds=TF_LOOKUP_TIMEOUT_SEC),
+            )
+        except Exception as exc:
+            self.node.get_logger().warn(
+                f"[{self.name}] failed to transform marker id={marker.id} "
+                f"from '{source_frame}' to '{self.target_frame}': {exc}"
+            )
+            return None
+
+        T_target_source = transform_to_matrix(target_to_source)
+        T_source_marker = pose_to_matrix(marker.pose, ignore_orientation=False)
+        marker_in_target.pose = matrix_to_pose(T_target_source @ T_source_marker)
+        marker_in_target.header.frame_id = self.target_frame
+        return marker_in_target
 
     def callback(self, msg: MarkerArray) -> None:
         # The incoming MarkerArray is a full fresh observation, but missing markers
@@ -477,18 +544,15 @@ class BoxManager:
             if marker.action == Marker.DELETE:
                 continue
 
-            frame_id = marker.header.frame_id or self.expected_frame
-            if frame_id != self.expected_frame:
-                self.node.get_logger().warn(
-                    f"[{self.name}] marker frame_id='{frame_id}' differs from "
-                    f"expected_frame='{self.expected_frame}'. The marker is still accepted."
-                )
+            marker_in_target = self.transform_marker_to_target_frame(marker)
+            if marker_in_target is None:
+                continue
 
             self.boxes[int(marker.id)] = BoxRecord(
                 id=int(marker.id),
-                pose=copy.deepcopy(marker.pose),
-                frame_id=frame_id,
-                marker=copy.deepcopy(marker),
+                pose=copy.deepcopy(marker_in_target.pose),
+                frame_id=self.target_frame,
+                marker=marker_in_target,
             )
 
     def get_boxes(self) -> Dict[int, BoxRecord]:
@@ -696,7 +760,14 @@ class Intention:
         self.node = node
         self.name = name
         self.robot = robot
-        self.box_manager = BoxManager(node, box_topic, box_frame, name)
+        self.box_manager = BoxManager(
+            node=node,
+            topic=box_topic,
+            default_source_frame=box_frame,
+            target_frame=MAP_FRAME,
+            tf_buffer=robot.tf_buffer,
+            name=name,
+        )
         self.eef_target_frame = eef_target_frame
         self.plane = plane
 
@@ -1043,7 +1114,7 @@ class IntentionTransformNode(Node):
             robot=self.robot,
             box_topic=REAL_BOX_TOPIC,
             box_frame=BASE_FRAME,
-            eef_target_frame=BASE_FRAME,
+            eef_target_frame=MAP_FRAME,
             plane=plane,
         )
         self.virtual_intention = Intention(
@@ -1181,10 +1252,10 @@ class IntentionTransformNode(Node):
         marker_array.markers.append(
             make_plane_marker(
                 self.plane,
-                BASE_FRAME,
+                MAP_FRAME,
                 stamp,
                 10,
-                "estimated_plane_base_frame",
+                "estimated_plane_map_frame_real",
                 ColorRGBA(r=1.0, g=0.8, b=0.0, a=0.22),
             )
         )
@@ -1202,7 +1273,7 @@ class IntentionTransformNode(Node):
         marker_array.markers.append(
             make_points_marker(
                 self.real_intention.get_debug_points(),
-                BASE_FRAME,
+                MAP_FRAME,
                 stamp,
                 20,
                 "real_intersection_points",
@@ -1225,7 +1296,7 @@ class IntentionTransformNode(Node):
             marker_array.markers.append(
                 make_sphere_marker(
                     real_mean,
-                    BASE_FRAME,
+                    MAP_FRAME,
                     stamp,
                     30,
                     "real_intersection_weighted_mean",
@@ -1286,25 +1357,42 @@ class IntentionTransformNode(Node):
         real_best = self.real_intention.get_best_box()
         virtual_best = self.virtual_intention.get_best_box()
 
+        if real_best is None and virtual_best is None:
+            return self.compute_fallback_transform_from_map_to_base()
+
         if real_best is None or virtual_best is None:
             return None
 
-        real_pose = real_best.box.pose
-        virtual_pose = virtual_best.box.pose
+        try:
+            base_from_map = self.tf_buffer.lookup_transform(
+                BASE_FRAME,
+                MAP_FRAME,
+                Time(),
+                timeout=Duration(seconds=TF_LOOKUP_TIMEOUT_SEC),
+            )
+        except Exception as exc:
+            self._log_throttled(
+                "virtual_base_alignment_base_map_lookup_failed",
+                "warn",
+                f"Failed to lookup TF {BASE_FRAME} -> {MAP_FRAME} "
+                f"for virtual base alignment: {exc}",
+            )
+            return None
+
+        T_map_real_box = pose_to_matrix(
+            real_best.box.pose,
+            ignore_orientation=IGNORE_ORIENTATION,
+        )
+        T_map_virtual_box = pose_to_matrix(
+            virtual_best.box.pose,
+            ignore_orientation=IGNORE_ORIENTATION,
+        )
+        T_base_real_box = transform_to_matrix(base_from_map) @ T_map_real_box
 
         if IGNORE_ORIENTATION:
             mat = np.eye(4, dtype=float)
-            mat[:3, 3] = np.array(
-                [
-                    virtual_pose.position.x - real_pose.position.x,
-                    virtual_pose.position.y - real_pose.position.y,
-                    virtual_pose.position.z - real_pose.position.z,
-                ],
-                dtype=float,
-            )
+            mat[:3, 3] = T_map_virtual_box[:3, 3] - T_base_real_box[:3, 3]
         else:
-            T_map_virtual_box = pose_to_matrix(virtual_pose, ignore_orientation=False)
-            T_base_real_box = pose_to_matrix(real_pose, ignore_orientation=False)
             mat = T_map_virtual_box @ invert_transform(T_base_real_box)
 
         return matrix_to_transform_stamped(

@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'intention'
+package_name = 'object_estimation'
 
 setup(
     name=package_name,
@@ -13,8 +13,8 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='min',
-    maintainer_email='7cmdehdrb@naver.com',
+    maintainer='irol',
+    maintainer_email='taeho.kim159@gmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     extras_require={
@@ -25,8 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             (
-                'virtual_robot_description_publisher = '
-                'intention.virtual_robot_description_publisher:main'
+                'sam3_virtual_box_publisher = '
+                'object_estimation.sam3_virtual_box_publisher:main'
             ),
         ],
     },
